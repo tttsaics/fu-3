@@ -19,6 +19,8 @@ public class GameServlet extends HttpServlet {
         String action = req.getParameter("action");
         if ("state".equals(action)) {
             sendGameState(req, resp);
+        } else if ("list_rooms".equals(action)) {
+            listRooms(req, resp);
         } else {
             resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "不支援的請求方式");
         }
@@ -160,6 +162,30 @@ public class GameServlet extends HttpServlet {
             return;
         }
         sendJsonResponse(resp, room, session.getId());
+    }
+
+    private void listRooms(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        resp.setCharacterEncoding("UTF-8");
+        resp.setContentType("application/json;charset=UTF-8");
+        java.util.List<GameRoom> availableRooms = RoomManager.getJoinableRooms();
+        
+        StringBuilder json = new StringBuilder();
+        json.append("{\"success\":true,\"rooms\":[");
+        for (int i = 0; i < availableRooms.size(); i++) {
+            GameRoom r = availableRooms.get(i);
+            if (i > 0) {
+                json.append(",");
+            }
+            json.append("{")
+                .append("\"roomCode\":\"").append(escapeJson(r.getCode())).append("\",")
+                .append("\"hostName\":\"").append(escapeJson(r.getHost().getName())).append("\"")
+                .append("}");
+        }
+        json.append("]}");
+        
+        PrintWriter out = resp.getWriter();
+        out.print(json.toString());
+        out.flush();
     }
 
     private void sendJsonResponse(HttpServletResponse resp, GameRoom room, String sessionId) throws IOException {

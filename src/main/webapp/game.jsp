@@ -43,6 +43,9 @@
     <!-- Parry Watermark Overlay (z-indexed behind characters) -->
     <div class="parry-watermark" id="parryWatermark">PARRY</div>
 
+    <!-- Punish Watermark Overlay (z-indexed behind characters) -->
+    <div class="punish-watermark" id="punishWatermark">PUNISH</div>
+
     <!-- Header Overlay (Room Code, Title) -->
     <div class="battle-header-overlay">
         <span class="logo">ARMOR</span>
@@ -108,13 +111,20 @@
     let turnTimer = null;
     let turnSeconds = 5;
     
-    // HP tracking globals for damage feedback
+    // HP, stun and transition tracking globals
     let lastSelfHp = 100;
     let lastOpponentHp = 100;
+    let lastSelfStunned = false;
+    let lastOpponentStunned = false;
+    let isTransitioning = false;
     let isFirstPoll = true;
 
     function isAttack(action) {
         return action === 'L_ATK' || action === 'M_ATK' || action === 'H_ATK';
+    }
+
+    function isParry(action) {
+        return action && action.startsWith('PARRY');
     }
 
     function getActionChineseName(action) {
@@ -130,12 +140,109 @@
             default: return action;
         }
     }
+
+    function playRoundSounds(data) {
+        const selfAction = data.selfAction;
+        const opponentAction = data.opponentAction;
+        const selfState = data.selfState;
+        const opponentState = data.opponentState;
+        const selfStunned = data.selfStunned;
+        const opponentStunned = data.opponentStunned;
+
+        // 1. Parry Success (格檔成功)
+        const selfParrySuccess = selfState === 'parry' && !selfStunned && opponentState === 'guard_break' && isAttack(opponentAction);
+        const opponentParrySuccess = opponentState === 'parry' && !opponentStunned && selfState === 'guard_break' && isAttack(selfAction);
+
+        if (selfParrySuccess) {
+            playSound(actionToState(opponentAction), 300);
+            playSound('parry', 600);
+            return;
+        }
+        if (opponentParrySuccess) {
+            playSound(actionToState(selfAction), 300);
+            playSound('parry', 600);
+            return;
+        }
+
+        // 2. Double Counter / Clash (雙方對撞)
+        const doubleCounter = selfState === 'get_hit' && opponentState === 'get_hit';
+        if (doubleCounter) {
+            playSound(actionToState(selfAction), 300);
+            playSound(actionToState(opponentAction), 300);
+            const hasHeavy = (selfAction === 'H_ATK' || opponentAction === 'H_ATK');
+            const delay = 300 + (hasHeavy ? 600 : 200);
+            playSound('double_counter', delay);
+            return;
+        }
+
+        // 3. Normal Hits, Counter Hits, Blocks, Guard Breaks
+        const isCounter = isAttack(selfAction) && isAttack(opponentAction);
+
+        // Self's attack sound
+        if (isAttack(selfAction) && !selfStunned) {
+            if (selfState === 'get_hit') {
+                playSound(actionToState(selfAction), 300);
+            } else {
+                if (isCounter) {
+                    const startup = (selfAction === 'H_ATK') ? 600 : 200;
+                    playSound(actionToState(selfAction), 600 + startup);
+                } else {
+                    if (opponentState === 'guard' || opponentState === 'H_guard') {
+                        const delay = (selfAction === 'H_ATK') ? 900 : 300;
+                        playSound(actionToState(selfAction), delay);
+                    } else {
+                        const startup = (selfAction === 'H_ATK') ? 600 : 200;
+                        playSound(actionToState(selfAction), 300 + startup);
+                    }
+                }
+            }
+        }
+
+        // Opponent's attack sound
+        if (isAttack(opponentAction) && !opponentStunned) {
+            if (opponentState === 'get_hit') {
+                playSound(actionToState(opponentAction), 300);
+            } else {
+                if (isCounter) {
+                    const startup = (opponentAction === 'H_ATK') ? 600 : 200;
+                    playSound(actionToState(opponentAction), 600 + startup);
+                } else {
+                    if (selfState === 'guard' || selfState === 'H_guard') {
+                        const delay = (opponentAction === 'H_ATK') ? 900 : 300;
+                        playSound(actionToState(opponentAction), delay);
+                    } else {
+                        const startup = (opponentAction === 'H_ATK') ? 600 : 200;
+                        playSound(actionToState(opponentAction), 300 + startup);
+                    }
+                }
+            }
+        }
+    }
     const bgm = new Audio('sfx/bgm.wav');
     bgm.loop = true;
+    let audioCtx = null;
+    let gainNode = null;
 
     function startBGM() {
         if (!bgmStarted) {
-            bgm.play().catch(e => console.log('BGM 播放失敗 (需使用者互動或檔案缺失)'));
+            bgm.play().then(() => {
+                try {
+                    if (!audioCtx) {
+                        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                        audioCtx = new AudioContextClass();
+                        const source = audioCtx.createMediaElementSource(bgm);
+                        gainNode = audioCtx.createGain();
+                        gainNode.gain.value = 1.8; // 將 BGM 放大為 1.8 倍
+                        source.connect(gainNode);
+                        gainNode.connect(audioCtx.destination);
+                    }
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+                } catch (err) {
+                    console.log('Web Audio 增益設定失敗，以預設音量播放:', err);
+                }
+            }).catch(e => console.log('BGM 播放失敗 (需使用者互動或檔案缺失)'));
             bgmStarted = true;
         }
     }
@@ -239,60 +346,197 @@
         const isAttacking = (newState === 'L_atk' || newState === 'M_atk' || newState === 'H_atk') && opponentState === 'get_hit';
         
         if (isNewRound) {
+            // 決定前 0.3 秒展示的初始動作：重攻擊顯示 H_ready.png，其他顯示 idle.png
+            img.src = (action === 'H_ATK') ? 'image/H_ready.png' : 'image/idle.png';
+
+            // 判斷是否為 COUNTER 的攻擊成功者 (雙方攻擊，且自己沒受擊而對手受擊)
+            const isCounterAttacker = isAttack(action) && isAttack(opponentAction) && newState !== 'get_hit' && opponentState === 'get_hit';
+            // 判斷對手是否為 COUNTER 的攻擊成功者
+            const isOpponentCounter = isAttack(opponentAction) && isAttack(action) && opponentState !== 'get_hit' && newState === 'get_hit';
+
             // 1. 被格檔
             if (isParried) {
-                img.src = 'image/' + actionToState(action) + '.png';
-                setTimeout(() => { img.src = 'image/guard_break.png'; }, 200);
+                setTimeout(() => {
+                    img.src = 'image/' + actionToState(action) + '.png';
+                    setTimeout(() => { img.src = 'image/guard_break.png'; }, 300); // 300ms after 300ms = 600ms
+                }, 300);
                 return;
             }
             // 2. 成功格檔
             if (isParrying) {
-                setTimeout(() => { img.src = 'image/parry.png'; }, 200);
+                setTimeout(() => { img.src = 'image/parry.png'; }, 600); // 對手攻擊動畫播放後 0.3 秒播放 (300ms + 300ms = 600ms)
                 return;
             }
             // 3. 被擊中 (受擊方)
             if (isHit) {
-                img.src = 'image/' + actionToState(action) + '.png';
-                // 延遲取決於對手是哪種攻擊：重擊 0.6s, 其他 0.2s
-                const delay = (opponentState === 'H_atk' || opponentAction === 'H_ATK') ? 600 : 200;
-                setTimeout(() => { img.src = 'image/get_hit.png'; }, delay);
+                setTimeout(() => {
+                    img.src = 'image/' + actionToState(action) + '.png';
+                    const delay = (opponentState === 'H_atk' || opponentAction === 'H_ATK') ? 600 : 200;
+                    setTimeout(() => { img.src = 'image/get_hit.png'; }, isOpponentCounter ? (300 + delay) : delay);
+                }, 300);
                 return;
             }
             // 4. 攻擊成功 (攻擊方)
             if (isAttacking) {
+                const startDelay = isCounterAttacker ? 600 : 300;
                 if (newState === 'H_atk') {
-                    img.src = 'image/H_ready.png';
-                    setTimeout(() => { img.src = 'image/H_atk.png'; }, 600);
+                    setTimeout(() => { img.src = 'image/H_atk.png'; }, startDelay + 600);
                 } else {
-                    setTimeout(() => { img.src = 'image/' + newState + '.png'; }, 200);
+                    setTimeout(() => { img.src = 'image/' + newState + '.png'; }, startDelay + 200);
                 }
                 return;
             }
-            // 5. 普通重擊 (沒打中人也沒被打中)
-            if (newState === 'H_atk') {
-                img.src = 'image/H_ready.png';
-                setTimeout(() => { img.src = 'image/H_atk.png'; }, 600);
+            // 5. 防重攻擊 (先播放普通防禦，當重攻擊落下再同步播放重防禦)
+            if (newState === 'H_guard') {
+                setTimeout(() => {
+                    img.src = 'image/guard.png';
+                    setTimeout(() => { img.src = 'image/H_guard.png'; }, 600); // 600ms after 300ms = 900ms
+                }, 300);
                 return;
             }
-        }
-        
-        // 預設更新
-        const currentSrc = img.src;
-        const isAnimating = currentSrc.indexOf('H_ready.png') !== -1 || 
-                           currentSrc.indexOf('parry.png') !== -1 || 
-                           currentSrc.indexOf('guard_break.png') !== -1 || 
-                           currentSrc.indexOf('get_hit.png') !== -1 ||
-                           currentSrc.indexOf('win.png') !== -1 || 
-                           currentSrc.indexOf('lose.png') !== -1;
+            // 8. 被破防 (非格檔引起的破防，即被普通攻擊扣乾架式)
+            if (newState === 'guard_break' && !isParried) {
+                setTimeout(() => {
+                    img.src = 'image/guard.png';
+                    const delay = (opponentAction === 'H_ATK') ? 600 : 200;
+                    setTimeout(() => { img.src = 'image/guard_break.png'; }, delay);
+                }, 300);
+                return;
+            }
+            // 6. 普通重擊 (沒打中人也沒被打中)
+            if (newState === 'H_atk') {
+                setTimeout(() => { img.src = 'image/H_atk.png'; }, 300 + 600);
+                return;
+            }
 
-        if (!isAnimating || !isNewRound) {
-             img.src = 'image/' + newState + '.png';
+            // 7. 其他動作 (例如防禦、格檔揮空、發呆) 延遲 300ms 播放
+            setTimeout(() => {
+                const currentSrc = img.src;
+                const isAnimating = currentSrc.indexOf('H_ready.png') !== -1 || 
+                                   currentSrc.indexOf('parry.png') !== -1 || 
+                                   currentSrc.indexOf('guard_break.png') !== -1 || 
+                                   currentSrc.indexOf('get_hit.png') !== -1 ||
+                                   currentSrc.indexOf('win.png') !== -1 || 
+                                   currentSrc.indexOf('lose.png') !== -1;
+
+                if (!isAnimating) {
+                     img.src = 'image/' + newState + '.png';
+                }
+            }, 300);
+            return;
+        }
+    }
+
+    function getHpStanceDelays(data) {
+        const selfAction = data.selfAction;
+        const opponentAction = data.opponentAction;
+        const selfState = data.selfState;
+        const opponentState = data.opponentState;
+        const selfStunned = data.selfStunned;
+        const opponentStunned = data.opponentStunned;
+
+        const selfParrying = selfState === 'parry' && !selfStunned;
+        const opponentParrying = opponentState === 'parry' && !opponentStunned;
+        const selfParried = opponentParrying && selfState === 'guard_break';
+        const opponentParried = selfParrying && opponentState === 'guard_break';
+
+        const doubleCounter = selfState === 'get_hit' && opponentState === 'get_hit';
+
+        let selfHpDelay = 0;
+        let selfStanceDelay = 0;
+        let oppHpDelay = 0;
+        let oppStanceDelay = 0;
+
+        // 1. Clash / Double Counter
+        if (doubleCounter) {
+            const hasHeavy = (selfAction === 'H_ATK' || opponentAction === 'H_ATK');
+            const delay = 300 + (hasHeavy ? 600 : 200);
+            selfHpDelay = delay;
+            oppHpDelay = delay;
+            selfStanceDelay = delay;
+            oppStanceDelay = delay;
+            return { selfHpDelay, selfStanceDelay, oppHpDelay, oppStanceDelay };
+        }
+
+        // 2. Self gets parried
+        if (selfParried) {
+            selfStanceDelay = 600; // Parry impact
+        }
+        // 3. Opponent gets parried
+        if (opponentParried) {
+            oppStanceDelay = 600; // Parry impact
+        }
+
+        // 4. Self gets hit (Opponent lands attack)
+        if (selfState === 'get_hit') {
+            const isOpponentCounter = isAttack(opponentAction) && isAttack(selfAction) && opponentState !== 'get_hit';
+            const oppStartup = (opponentAction === 'H_ATK') ? 600 : 200;
+            selfHpDelay = 300 + (isOpponentCounter ? 300 + oppStartup : oppStartup);
+            selfStanceDelay = selfHpDelay; // 同步架式更新延遲
+        }
+
+        // 5. Opponent gets hit (Self lands attack)
+        if (opponentState === 'get_hit') {
+            const isSelfCounter = isAttack(selfAction) && isAttack(opponentAction) && selfState !== 'get_hit';
+            const selfStartup = (selfAction === 'H_ATK') ? 600 : 200;
+            oppHpDelay = 300 + (isSelfCounter ? 300 + selfStartup : selfStartup);
+            oppStanceDelay = oppHpDelay; // 同步架式更新延遲
+        }
+
+        // 6. Self blocks / guard breaks
+        if (selfState === 'H_guard') {
+            selfStanceDelay = 900; // Heavy attack lands at 900ms
+        } else if (selfState === 'guard' || selfState === 'guard_break') {
+            const oppStartup = (opponentAction === 'H_ATK') ? 600 : 200;
+            selfStanceDelay = 300 + oppStartup; // Light/M attack lands at 500ms, H lands at 900ms (guard_break case)
+        }
+
+        // 7. Opponent blocks / guard breaks
+        if (opponentState === 'H_guard') {
+            oppStanceDelay = 900;
+        } else if (opponentState === 'guard' || opponentState === 'guard_break') {
+            const selfStartup = (selfAction === 'H_ATK') ? 600 : 200;
+            oppStanceDelay = 300 + selfStartup;
+        }
+
+        return { selfHpDelay, selfStanceDelay, oppHpDelay, oppStanceDelay };
+    }
+
+    function applyInputControls(data) {
+        document.getElementById('roomStatus').textContent = data.selfSubmitted ? '已選擇，等待對手' : '請選擇你的動作';
+        disableButtons(!data.canSubmit);
+
+        if (data.canSubmit) {
+            if (data.selfStunned) {
+                if (turnTimer) { clearInterval(turnTimer); turnTimer = null; }
+                updateTimerBox("暈");
+                submitAction('NONE');
+            } else {
+                if (!turnTimer) {
+                    turnTimer = setInterval(() => {
+                        turnSeconds--;
+                        if (turnSeconds <= 0) {
+                            clearInterval(turnTimer);
+                            turnTimer = null;
+                            submitAction('NONE');
+                        } else {
+                            updateHintWithTimer(turnSeconds);
+                        }
+                    }, 1000);
+                }
+                updateHintWithTimer(turnSeconds);
+            }
+        } else {
+            if (turnTimer) { clearInterval(turnTimer); turnTimer = null; }
+            document.getElementById('submitHint').textContent = '已送出動作，等待對手...';
+            updateTimerBox("⌛");
         }
     }
 
     function updatePage(data) {
         const wasFirstPoll = isFirstPoll;
-        if (data.opponentLeft === 'true') {
+        if (data.opponentLeft) {
+            isTransitioning = false;
             showModal("對手跑了", "他是俗辣", "<button onclick='leaveRoom()'>返回大廳</button>");
             if (turnTimer) { clearInterval(turnTimer); turnTimer = null; }
             return;
@@ -307,37 +551,7 @@
         const isGameOverFirstTime = data.gameOver && !gameOverHandled;
 
         if (isNewRound || isGameOverFirstTime) {
-            const selfIsAttacking = (data.selfState === 'L_atk' || data.selfState === 'M_atk' || data.selfState === 'H_atk') && data.opponentState === 'get_hit';
-            const opponentIsAttacking = (data.opponentState === 'L_atk' || data.opponentState === 'M_atk' || data.opponentState === 'H_atk') && data.selfState === 'get_hit';
-
-            // 自我音效
-            if (data.selfState !== 'idle' && data.selfState !== 'get_hit') {
-                if (!(data.selfState === 'parry' && data.selfStunned)) {
-                    let delay = 0;
-                    if (data.selfState === 'H_atk') delay = 600;
-                    else if (data.selfState === 'parry' && !data.selfStunned) delay = 200;
-                    else if (selfIsAttacking) delay = 200; 
-                    playSound(data.selfState, delay);
-                }
-            }
-            // 對手音效
-            if (data.opponentState !== 'idle' && data.opponentState !== 'get_hit') {
-                if (!(data.opponentState === 'parry' && data.opponentStunned)) {
-                    let delay = 0;
-                    if (data.opponentState === 'H_atk') delay = 600;
-                    else if (data.opponentState === 'parry' && !data.opponentStunned) delay = 200;
-                    else if (opponentIsAttacking) delay = 200;
-                    playSound(data.opponentState, delay);
-                }
-            }
-            // 雙方對撞音效
-            if (data.selfState === 'get_hit' && data.opponentState === 'get_hit') {
-                const selfDelay = (data.opponentAction === 'H_ATK') ? 600 : 200;
-                const oppDelay = (data.selfAction === 'H_ATK') ? 600 : 200;
-                playSound(actionToState(data.selfAction), selfDelay);
-                playSound(actionToState(data.opponentAction), oppDelay);
-            }
-
+            playRoundSounds(data);
             lastRoundCount = data.roundCount;
         }
 
@@ -349,9 +563,19 @@
         document.getElementById('selfBattleName').textContent = data.selfName;
         document.getElementById('opponentBattleName').textContent = data.opponentName;
         document.getElementById('roundCount').textContent = data.roundCount;
-        document.getElementById('lastMessage').textContent = data.lastMessage;
 
         const isFirstPollOfResolvedRound = isNewRound || isGameOverFirstTime;
+        const isDelayed = isFirstPollOfResolvedRound && !wasFirstPoll;
+
+        if (isDelayed) {
+            const delays = getHpStanceDelays(data);
+            const messageDelay = Math.max(delays.selfHpDelay, delays.oppHpDelay, delays.selfStanceDelay, delays.oppStanceDelay, 300);
+            setTimeout(() => {
+                document.getElementById('lastMessage').textContent = data.lastMessage;
+            }, messageDelay);
+        } else {
+            document.getElementById('lastMessage').textContent = data.lastMessage;
+        }
 
         if (data.roomStage === 'waiting') {
             // Clear details
@@ -364,6 +588,7 @@
             document.getElementById('opponentActionName').style.display = 'none';
 
             document.getElementById('parryWatermark').style.display = 'none';
+            document.getElementById('punishWatermark').style.display = 'none';
         } else if (isFirstPollOfResolvedRound || wasFirstPoll) {
             const selfAction = data.selfAction;
             const opponentAction = data.opponentAction;
@@ -374,20 +599,36 @@
             const showDetails = !(data.roundCount === 1 && selfAction === 'NONE' && opponentAction === 'NONE');
 
             if (showDetails) {
-                // Update action names
-                document.getElementById('selfActionName').textContent = getActionChineseName(selfAction);
-                document.getElementById('opponentActionName').textContent = getActionChineseName(opponentAction);
-                document.getElementById('selfActionName').style.display = 'inline-block';
-                document.getElementById('opponentActionName').style.display = 'inline-block';
+                const delays = getHpStanceDelays(data);
+                const selfActionNameText = getActionChineseName(selfAction);
+                const opponentActionNameText = getActionChineseName(opponentAction);
+
+                if (isDelayed) {
+                    setTimeout(() => {
+                        document.getElementById('selfActionName').textContent = selfActionNameText;
+                        document.getElementById('selfActionName').style.display = 'inline-block';
+                        document.getElementById('opponentActionName').textContent = opponentActionNameText;
+                        document.getElementById('opponentActionName').style.display = 'inline-block';
+                    }, 300);
+                } else {
+                    document.getElementById('selfActionName').textContent = selfActionNameText;
+                    document.getElementById('selfActionName').style.display = 'inline-block';
+                    document.getElementById('opponentActionName').textContent = opponentActionNameText;
+                    document.getElementById('opponentActionName').style.display = 'inline-block';
+                }
 
                 // Check for counter
                 let selfCounter = "";
                 let opponentCounter = "";
 
-                if (isAttack(selfAction) && isAttack(opponentAction)) {
+                // Check for counter (雙方都攻擊比拼，或是攻擊擊中猜錯格檔的對手)
+                if (isAttack(selfAction) && (isAttack(opponentAction) || isParry(opponentAction))) {
                     if (selfState !== 'get_hit' && opponentState === 'get_hit') {
                         selfCounter = "COUNTER";
-                    } else if (opponentState !== 'get_hit' && selfState === 'get_hit') {
+                    }
+                }
+                if (isAttack(opponentAction) && (isAttack(selfAction) || isParry(selfAction))) {
+                    if (opponentState !== 'get_hit' && selfState === 'get_hit') {
                         opponentCounter = "COUNTER";
                     }
                 }
@@ -400,16 +641,48 @@
                     opponentCounter = "GUARD BREAKING";
                 }
 
-                document.getElementById('selfCounterText').textContent = selfCounter;
-                document.getElementById('opponentCounterText').textContent = opponentCounter;
+                if (isDelayed) {
+                    const selfCounterDelay = (selfCounter === "GUARD BREAKING") ? delays.oppStanceDelay : delays.oppHpDelay;
+                    const oppCounterDelay = (opponentCounter === "GUARD BREAKING") ? delays.selfStanceDelay : delays.selfHpDelay;
+
+                    document.getElementById('selfCounterText').textContent = "";
+                    document.getElementById('opponentCounterText').textContent = "";
+
+                    if (selfCounter) {
+                        setTimeout(() => {
+                            document.getElementById('selfCounterText').textContent = selfCounter;
+                        }, selfCounterDelay);
+                    }
+                    if (opponentCounter) {
+                        setTimeout(() => {
+                            document.getElementById('opponentCounterText').textContent = opponentCounter;
+                        }, oppCounterDelay);
+                    }
+                } else {
+                    document.getElementById('selfCounterText').textContent = selfCounter;
+                    document.getElementById('opponentCounterText').textContent = opponentCounter;
+                }
 
                 // Parry Watermark
                 const isParryOccurred = (selfState === 'parry' && opponentState === 'guard_break') || 
                                        (opponentState === 'parry' && selfState === 'guard_break');
+                document.getElementById('parryWatermark').style.display = 'none';
                 if (isParryOccurred) {
-                    document.getElementById('parryWatermark').style.display = 'block';
-                } else {
-                    document.getElementById('parryWatermark').style.display = 'none';
+                    setTimeout(() => {
+                        document.getElementById('parryWatermark').style.display = 'block';
+                    }, 600);
+                }
+
+                // Punish Watermark
+                const selfAttackedWhileStunned = lastSelfStunned && isAttack(opponentAction) && selfState === 'get_hit';
+                const opponentAttackedWhileStunned = lastOpponentStunned && isAttack(selfAction) && opponentState === 'get_hit';
+                document.getElementById('punishWatermark').style.display = 'none';
+                if (selfAttackedWhileStunned || opponentAttackedWhileStunned) {
+                    const attackerAction = selfAttackedWhileStunned ? opponentAction : selfAction;
+                    const startup = (attackerAction === 'H_ATK') ? 600 : 200;
+                    setTimeout(() => {
+                        document.getElementById('punishWatermark').style.display = 'block';
+                    }, 300 + startup);
                 }
             } else {
                 // Clear details
@@ -422,18 +695,39 @@
                 document.getElementById('opponentActionName').style.display = 'none';
 
                 document.getElementById('parryWatermark').style.display = 'none';
+                document.getElementById('punishWatermark').style.display = 'none';
             }
         }
 
         const selfHpPercent = data.selfMaxHp ? (data.selfHp / data.selfMaxHp) * 100 : 0;
         const opponentHpPercent = data.opponentMaxHp ? (data.opponentHp / data.opponentMaxHp) * 100 : 0;
-        document.getElementById('selfHpBar').style.width = selfHpPercent + '%';
-        document.getElementById('opponentHpBar').style.width = opponentHpPercent + '%';
-
         const selfStancePercent = data.selfMaxStance ? (data.selfStance / data.selfMaxStance) * 100 : 0;
-        const opponentStancePercent = data.opponentMaxStance ? (data.opponentMaxStance / data.opponentMaxStance) * 100 : 0;
-        document.getElementById('selfStanceBar').style.width = selfStancePercent + '%';
-        document.getElementById('opponentStanceBar').style.width = opponentStancePercent + '%';
+        const opponentStancePercent = data.opponentMaxStance ? (data.opponentStance / data.opponentMaxStance) * 100 : 0;
+
+        if ((isNewRound || isGameOverFirstTime) && !wasFirstPoll) {
+            const delays = getHpStanceDelays(data);
+            
+            setTimeout(() => {
+                document.getElementById('selfHpBar').style.width = selfHpPercent + '%';
+            }, delays.selfHpDelay);
+
+            setTimeout(() => {
+                document.getElementById('opponentHpBar').style.width = opponentHpPercent + '%';
+            }, delays.oppHpDelay);
+
+            setTimeout(() => {
+                document.getElementById('selfStanceBar').style.width = selfStancePercent + '%';
+            }, delays.selfStanceDelay);
+
+            setTimeout(() => {
+                document.getElementById('opponentStanceBar').style.width = opponentStancePercent + '%';
+            }, delays.oppStanceDelay);
+        } else if (!isTransitioning) {
+            document.getElementById('selfHpBar').style.width = selfHpPercent + '%';
+            document.getElementById('opponentHpBar').style.width = opponentHpPercent + '%';
+            document.getElementById('selfStanceBar').style.width = selfStancePercent + '%';
+            document.getElementById('opponentStanceBar').style.width = opponentStancePercent + '%';
+        }
 
         const selfParrying = data.selfState === 'parry' && !data.selfStunned;
         const opponentParrying = data.opponentState === 'parry' && !data.opponentStunned;
@@ -441,6 +735,7 @@
         const opponentParried = selfParrying && data.opponentState === 'guard_break';
 
         if (data.roomStage === 'waiting') {
+            isTransitioning = false;
             document.getElementById('roomStatus').textContent = '等待對手加入...';
             disableButtons(true);
             document.getElementById('submitHint').textContent = '請等待對手加入並開始遊戲。';
@@ -449,6 +744,9 @@
             document.getElementById('selfImg').src = 'image/idle.png';
             document.getElementById('opponentImg').src = 'image/idle.png';
         } else if (data.gameOver) {
+            if (resultShown) {
+                isTransitioning = false;
+            }
             document.getElementById('roomStatus').textContent = '遊戲結束';
             disableButtons(true);
             document.getElementById('submitHint').textContent = '遊戲結束。等待選擇再戰或離開。';
@@ -456,18 +754,20 @@
             updateTimerBox("GG");
             
             if (!resultShown) {
-                updateCharacterImg('selfImg', data.selfState, data.selfAction, isNewRound, selfParried, selfParrying, data.opponentState, data.opponentAction);
-                updateCharacterImg('opponentImg', data.opponentState, data.opponentAction, isNewRound, opponentParried, opponentParrying, data.selfState, data.selfAction);
+                updateCharacterImg('selfImg', data.selfState, data.selfAction, isFirstPollOfResolvedRound, selfParried, selfParrying, data.opponentState, data.opponentAction);
+                updateCharacterImg('opponentImg', data.opponentState, data.opponentAction, isFirstPollOfResolvedRound, opponentParried, opponentParrying, data.selfState, data.selfAction);
             }
 
             if (!gameOverHandled) {
                 gameOverHandled = true;
+                isTransitioning = true;
                 // 遊戲結束時停止並重置背景音樂
                 bgm.pause();
                 bgm.currentTime = 0;
                 bgmStarted = false;
 
                 setTimeout(() => {
+                    isTransitioning = false;
                     resultShown = true;
                     if (data.selfHp > data.opponentHp) {
                         document.getElementById('selfImg').src = 'image/win.png';
@@ -498,46 +798,36 @@
                 startBGM();
             }
             
-            updateCharacterImg('selfImg', data.selfState, data.selfAction, isNewRound, selfParried, selfParrying, data.opponentState, data.opponentAction);
-            updateCharacterImg('opponentImg', data.opponentState, data.opponentAction, isNewRound, opponentParried, opponentParrying, data.selfState, data.selfAction);
+            updateCharacterImg('selfImg', data.selfState, data.selfAction, isFirstPollOfResolvedRound, selfParried, selfParrying, data.opponentState, data.opponentAction);
+            updateCharacterImg('opponentImg', data.opponentState, data.opponentAction, isFirstPollOfResolvedRound, opponentParried, opponentParrying, data.selfState, data.selfAction);
 
-            document.getElementById('roomStatus').textContent = data.selfSubmitted ? '已選擇，等待對手' : '請選擇你的動作';
-            disableButtons(!data.canSubmit);
-
-            if (data.canSubmit) {
-                if (data.selfStunned) {
-                    if (turnTimer) { clearInterval(turnTimer); turnTimer = null; }
-                    updateTimerBox("暈");
-                    submitAction('NONE');
-                } else {
-                    if (!turnTimer) {
-                        turnTimer = setInterval(() => {
-                            turnSeconds--;
-                            if (turnSeconds <= 0) {
-                                clearInterval(turnTimer);
-                                turnTimer = null;
-                                submitAction('NONE');
-                            } else {
-                                updateHintWithTimer(turnSeconds);
-                            }
-                        }, 1000);
-                    }
-                    updateHintWithTimer(turnSeconds);
-                }
-            } else {
+            if (isNewRound) {
+                isTransitioning = true;
+                disableButtons(true);
+                document.getElementById('roomStatus').textContent = '回合結算中...';
+                updateTimerBox("VS");
                 if (turnTimer) { clearInterval(turnTimer); turnTimer = null; }
-                document.getElementById('submitHint').textContent = '已送出動作，等待對手...';
-                updateTimerBox("⌛");
+                
+                setTimeout(() => {
+                    isTransitioning = false;
+                    applyInputControls(data);
+                }, 2000);
+            } else {
+                if (!isTransitioning) {
+                    applyInputControls(data);
+                }
             }
         }
 
         lastSelfHp = data.selfHp;
         lastOpponentHp = data.opponentHp;
+        lastSelfStunned = data.selfStunned;
+        lastOpponentStunned = data.opponentStunned;
         isFirstPoll = false;
     }
 
     function updateHintWithTimer(sec) {
-        document.getElementById('submitHint').textContent = `請於 ${sec} 秒內選擇動作，否則將自動跳過。`;
+        document.getElementById('submitHint').textContent = '請於 ' + sec + ' 秒內選擇動作，否則將自動跳過。';
         updateTimerBox(sec);
     }
 

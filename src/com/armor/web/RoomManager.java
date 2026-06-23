@@ -35,6 +35,16 @@ public class RoomManager {
         return rooms.get(normalized);
     }
 
+    public static java.util.List<GameRoom> getJoinableRooms() {
+        java.util.List<GameRoom> list = new java.util.ArrayList<>();
+        for (GameRoom room : rooms.values()) {
+            if (!room.isComputerRoom() && !room.isGuestPresent()) {
+                list.add(room);
+            }
+        }
+        return list;
+    }
+
     public static boolean removeRoom(String roomCode) {
         return rooms.remove(roomCode) != null;
     }

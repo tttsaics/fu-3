@@ -1,6 +1,7 @@
 package com.armor.web;
 
 import com.armor.audio.AudioManager;
+import com.armor.audio.SilentAudioManager;
 import com.armor.enums.Action;
 import com.armor.logic.CombatManager;
 import java.util.Objects;
@@ -40,6 +41,10 @@ public class GameRoom {
 
     public String getCode() {
         return code;
+    }
+
+    public boolean isComputerRoom() {
+        return computerRoom;
     }
 
     public PlayerState getHost() {
@@ -148,7 +153,7 @@ public class GameRoom {
         player.setAction(action == null ? Action.NONE : action);
 
         if (computerRoom && guest != null && guest.isComputer() && !guest.hasSubmitted()) {
-            guest.setAction(new CombatManager(host.getAvatar(), guest.getAvatar(), new AudioManager()).enemyAI());
+            guest.setAction(new CombatManager(host.getAvatar(), guest.getAvatar(), new SilentAudioManager()).enemyAI());
         }
         if (host.hasSubmitted() && guest != null && guest.hasSubmitted()) {
             resolveRound();
@@ -192,7 +197,7 @@ public class GameRoom {
     }
 
     private void resolveRound() {
-        CombatManager combat = new CombatManager(host.getAvatar(), guest.getAvatar(), new AudioManager());
+        CombatManager combat = new CombatManager(host.getAvatar(), guest.getAvatar(), new SilentAudioManager());
         Action hostAction = host.getAvatar().isStunned ? Action.NONE : host.getAction();
         Action guestAction = guest.getAvatar().isStunned ? Action.NONE : guest.getAction();
         
