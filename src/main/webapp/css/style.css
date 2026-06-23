@@ -157,6 +157,8 @@ button:hover,
 /* 遊戲容器樣式 */
 .game-container {
     padding: 30px !important;
+    max-width: 100%;
+    grid-column: 1 / -1;
 }
 
 .battle-area {
