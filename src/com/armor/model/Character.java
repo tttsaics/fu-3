@@ -11,6 +11,7 @@ public class Character {
     // 戰鬥狀態
     public String state = "idle"; // 例如: "idle", "guard", "get_hit"
     public boolean isStunned = false; // 是否暈眩
+    public String stunReason = ""; // 暈眩原因，例如 "被格檔"、"格檔揮空"
 
     // 破綻機制
     public int vuln = 0; // 當前破綻

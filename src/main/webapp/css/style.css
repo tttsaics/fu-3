@@ -105,6 +105,8 @@ button,
 .box button {
     width: 100%;
     box-sizing: border-box;
+    padding: 6px 10px; /* 縮減按鈕內距以降低高度 */
+    font-size: 16px;
 }
 
 button:hover,
@@ -154,98 +156,393 @@ button:hover,
     border-radius: 14px;
 }
 
-/* 遊戲容器樣式 */
-.game-container {
-    padding: 30px !important;
-    max-width: 100%;
-    grid-column: 1 / -1;
+/* 戰鬥畫面與角色 */
+.battle-scene {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #ffffff;
+    overflow: hidden;
+    z-index: 1;
 }
 
-.battle-area {
+/* 戰鬥畫面的灰色地面區隔線 */
+.battle-scene::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 220px; /* 地面高度，剛好放置控制面板 */
+    background: #f4f4f4;
+    border-top: 4px solid #333333;
+    z-index: 2; /* 位於背景白底之上，但低於人物與 UI */
+}
+
+.character-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 4; /* 位於地面之上，但低於 UI 與按鈕欄 */
+    pointer-events: none; /* 防止阻擋滑鼠與按鈕點擊 */
+}
+
+.character {
+    position: absolute;
+    bottom: 220px; /* 雙腳踩在地面上 */
+    height: calc(100% - 240px); /* 扣除地面與頂部的剩餘高度 */
+    width: 60%; /* 放寬寬度以容納大動作的招式圖片 */
     display: flex;
-    align-items: center;
-    justify-content: space-around;
-    gap: 30px;
-    flex-wrap: wrap;
+    overflow: visible;
 }
 
-.character-section {
-    flex: 1;
-    min-width: 300px;
+.character.self {
+    left: 20px; /* 移向中間，使角色站靠近一點 */
+    justify-content: flex-start;
+}
+
+.character.opponent {
+    right: 20px; /* 移向中間，使角色站靠近一點 */
+    justify-content: flex-end;
+}
+
+.character img {
+    height: 100%; /* 依據容器高度自適應縮放，避免下半身被裁切 */
+    width: auto;
+    max-width: none; /* 移除寬度限制造成的自動壓縮縮小 */
+    object-fit: contain;
+    object-position: bottom center; /* 保持雙腳靠底對齊 */
+}
+
+.character.opponent img {
+    transform: scaleX(-1); /* 敵人水平鏡像 */
+}
+
+/* 戰鬥畫面 UI 覆蓋層 */
+.battle-ui {
+    position: absolute;
+    top: 20px;
+    width: calc(50% - 60px); /* 兩邊血條拉長至螢幕中間，中間留出方框空隙 */
+    z-index: 15;
+    color: #000;
+}
+
+.battle-ui.self-ui {
+    left: 20px;
+}
+
+.battle-ui.opponent-ui {
+    right: 20px;
+    text-align: right;
+}
+
+/* 讓敵方的血量與架式條向右靠攏，以達成由內向外扣減的對戰遊戲效果 */
+.opponent-ui .hp-fill,
+.opponent-ui .stance-fill {
+    float: right;
+}
+
+/* 中央回合計時器方框 */
+.battle-timer-box {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 60px;
+    background: #000000;
+    border: 3px solid #333333;
+    box-sizing: border-box;
+    color: #ffffff;
+    font-family: "Impact", "Arial Black", sans-serif;
+    font-size: 28px;
+    font-weight: bold;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 20;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+    border-radius: 6px;
+}
+
+.ui-name {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.battle-hp-bar {
+    width: 100%;
+    height: 25px;
+    background: #000;
+    border: 3px solid #000;
+    margin-bottom: 5px;
+    box-sizing: border-box;
+}
+
+.battle-hp-bar .hp-fill {
+    height: 100%;
+    background: #dc3232;
+    width: 100%;
+    transition: width 0.3s ease;
+}
+
+.battle-stance-bar {
+    width: 100%;
+    height: 10px;
+    background: #000;
+    border: 3px solid #000;
+    box-sizing: border-box;
+}
+
+.battle-stance-bar .stance-fill {
+    height: 100%;
+    background: #808080;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+/* 戰鬥房頂端資訊覆蓋層 */
+.battle-header-overlay {
+    position: absolute;
+    top: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    color: #333333;
+    font-size: 16px;
+    font-weight: bold;
+    z-index: 15;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 4px 16px;
+    border-radius: 20px;
+}
+.battle-header-overlay .logo {
+    font-family: "Impact", sans-serif;
+    font-size: 20px;
+    letter-spacing: 0.1em;
+    margin-right: 15px;
+}
+.battle-header-overlay .room-info {
+    margin-right: 15px;
+}
+.battle-header-overlay .round-info {
+    color: #dc3232;
+    font-size: 18px;
+}
+
+.battle-status-overlay {
+    display: none; /* 隱藏中間的狀態播報 */
+}
+
+/* 離開按鈕懸浮定位 */
+.leave-btn {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(255, 59, 48, 0.1);
+    color: #ff3b30;
+    border: 2px solid #ff3b30;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 25;
+    transition: background 0.2s, color 0.2s;
+    display: inline-block;
+}
+.leave-btn:hover {
+    background: #ff3b30;
+    color: #ffffff;
+}
+
+/* 底部操作面板覆蓋層 */
+.battle-controls-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 800px;
+    height: 220px;
+    background: rgba(0, 0, 0, 0.9);
+    border-top: 4px solid #333333;
+    border-left: 4px solid #333333;
+    border-right: 4px solid #333333;
+    border-radius: 16px 16px 0 0;
+    padding: 15px 30px;
+    box-sizing: border-box;
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.battle-controls-overlay .buttons-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    width: 100%;
+}
+
+.battle-controls-overlay .buttons-grid button {
+    height: 42px;
+    font-size: 16px;
+    font-weight: bold;
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+    color: #ffffff;
+    border: 2px solid rgba(255, 255, 255, 0.7);
+    transition: background 0.15s, border-color 0.15s;
+    box-sizing: border-box;
+    padding: 0;
+}
+
+.battle-controls-overlay .buttons-grid button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: #ffffff;
+    color: #ffffff;
+}
+
+.battle-controls-overlay .buttons-grid button:disabled {
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    color: rgba(255, 255, 255, 0.2) !important;
+    cursor: not-allowed;
+    background: transparent;
+}
+
+.battle-controls-overlay .buttons-grid button.empty {
+    border: none;
+    cursor: default;
+    background: transparent;
+}
+
+.battle-controls-overlay .buttons-grid button.skip-btn {
+    border-color: #ff3b30;
+    color: #ff3b30;
+}
+.battle-controls-overlay .buttons-grid button.skip-btn:hover:not(:disabled) {
+    background: rgba(255, 59, 48, 0.15);
+    border-color: #ff453a;
+    color: #ff453a;
+}
+
+#submitHint {
+    margin: 8px 0 0 0;
+    font-size: 14px;
+    color: #aaaaaa;
     text-align: center;
 }
 
-.character-section h3 {
-    font-size: 24px;
-    margin-bottom: 15px;
-}
-
-.character-display {
-    width: 300px;
-    height: 300px;
-    margin: 20px auto;
-    background: rgba(255,255,255,0.05);
-    border: 2px solid rgba(255,255,255,0.2);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
+/* Modal styles */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
     justify-content: center;
-    overflow: hidden;
+    align-items: center;
 }
 
-.character-sprite {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-}
-
-#opponentImage {
-    transform: scaleX(-1);
-}
-
-.vs-text {
-    font-size: 32px;
-    font-weight: bold;
-    color: rgba(255,255,255,0.6);
-    padding: 0 20px;
-}
-
-/* 血量條樣式 */
-.hp-bar {
-    width: 100%;
-    height: 24px;
-    background: rgba(0,0,0,0.5);
-    border: 2px solid rgba(255,255,255,0.2);
+.modal-content {
+    background: #222;
+    color: #fff;
+    padding: 30px;
     border-radius: 12px;
-    overflow: hidden;
-    margin: 10px 0;
+    border: 2px solid #555;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8);
 }
 
-.hp-fill {
-    height: 100%;
-    background: #e74c3c;
-    transition: width 0.3s ease;
+.modal-content h2 {
+    margin-top: 0;
+    font-size: 28px;
+}
+
+.modal-content p {
+    font-size: 18px;
+    margin-bottom: 24px;
+}
+
+.modal-buttons {
+    display: flex;
+    justify-content: space-around;
+    gap: 15px;
+}
+
+.modal-buttons button {
+    flex: 1;
+    font-size: 18px;
+    padding: 10px 0;
+}
+
+/* 玩家回合行動細節樣式 */
+.action-detail {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     width: 100%;
 }
 
-.stance-bar {
-    width: 100%;
-    height: 16px;
-    background: rgba(0,0,0,0.5);
-    border: 2px solid rgba(255,255,255,0.2);
-    border-radius: 8px;
-    overflow: hidden;
-    margin: 5px 0 10px 0;
+.self-ui .action-detail {
+    align-items: flex-start;
 }
 
-.stance-fill {
-    height: 100%;
-    background: #f1c40f;
-    transition: width 0.3s ease;
-    width: 100%;
+.opponent-ui .action-detail {
+    align-items: flex-end;
 }
 
-.character-section p {
-    margin: 8px 0;
+.counter-text {
+    font-family: "Impact", "Arial Black", sans-serif;
+    font-size: 24px;
+    font-weight: bold;
+    color: #ff3b30; /* COUNTER 與 GUARD BREAKING 使用亮紅色 */
+    letter-spacing: 0.05em;
+    min-height: 30px; /* 預留高度避免排版抖動 */
+    line-height: 30px;
+}
+
+.action-name {
     font-size: 16px;
+    font-weight: bold;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.7); /* 深色背景，讓白色文字更清晰 */
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 3px 10px;
+    border-radius: 4px;
+    display: inline-block;
+    min-height: 24px;
+    line-height: 18px;
+    box-sizing: border-box;
+}
+
+
+
+/* 螢幕中央大大的 PARRY 水印 */
+.parry-watermark {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: "Impact", "Arial Black", sans-serif;
+    font-size: 22vw; /* 佔滿戰鬥區的超大字體 */
+    font-weight: bold;
+    color: #333333; /* 暗灰色 */
+    opacity: 0.7; /* 70% 透明度 */
+    letter-spacing: 0.05em;
+    z-index: 3; /* 位於最底層（地面及白底之上，人物與UI之下） */
+    pointer-events: none;
+    user-select: none;
+    display: none; /* 預設隱藏 */
 }

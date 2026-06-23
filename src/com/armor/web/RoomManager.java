@@ -10,22 +10,29 @@ public class RoomManager {
     public static GameRoom createRoom(String hostName, String sessionId) {
         String code = generateRoomCode();
         GameRoom room = new GameRoom(code, hostName, sessionId);
-        rooms.put(code, room);
+        rooms.put(code.toUpperCase(), room);
         return room;
     }
 
     public static GameRoom createComputerRoom(String hostName, String sessionId) {
         String code = generateRoomCode();
         GameRoom room = new GameRoom(code, hostName, sessionId, true);
-        rooms.put(code, room);
+        rooms.put(code.toUpperCase(), room);
         return room;
     }
 
     public static GameRoom getRoom(String roomCode) {
-        if (roomCode == null) {
+        if (roomCode == null || roomCode.trim().isEmpty()) {
             return null;
         }
-        return rooms.get(roomCode.trim().toUpperCase());
+        String normalized = roomCode.trim().toUpperCase();
+        
+        // 修正：如果輸入的是純數字且長度不足 4 位，自動補零 (例如 "1" -> "0001")
+        if (normalized.matches("\\d+") && normalized.length() < 4) {
+            normalized = String.format("%04d", Integer.parseInt(normalized));
+        }
+        
+        return rooms.get(normalized);
     }
 
     public static boolean removeRoom(String roomCode) {

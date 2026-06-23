@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>ARMOR - 錯誤</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=<%= System.currentTimeMillis() %>">
 </head>
 <body>
 <div class="page-container">

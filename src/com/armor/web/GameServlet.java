@@ -36,9 +36,41 @@ public class GameServlet extends HttpServlet {
             createComputerRoom(req, resp);
         } else if ("submit".equals(action)) {
             submitAction(req, resp);
+        } else if ("rematch".equals(action)) {
+            rematchAction(req, resp);
+        } else if ("leave".equals(action)) {
+            leaveAction(req, resp);
         } else {
             resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "不支援的請求動作");
         }
+    }
+
+    private void rematchAction(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        HttpSession session = req.getSession();
+        String roomCode = (String) session.getAttribute("roomCode");
+        if (roomCode != null) {
+            GameRoom room = RoomManager.getRoom(roomCode);
+            if (room != null) {
+                room.requestRematch(session.getId());
+                sendJsonResponse(resp, room, session.getId());
+                return;
+            }
+        }
+        sendJsonError(resp, "無效的房間", HttpServletResponse.SC_BAD_REQUEST);
+    }
+
+    private void leaveAction(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        HttpSession session = req.getSession();
+        String roomCode = (String) session.getAttribute("roomCode");
+        if (roomCode != null) {
+            GameRoom room = RoomManager.getRoom(roomCode);
+            if (room != null) {
+                room.leaveRoom(session.getId());
+            }
+        }
+        session.removeAttribute("roomCode");
+        session.removeAttribute("playerIndex");
+        resp.getWriter().print("{\"success\":true}");
     }
 
     private void createRoom(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
@@ -158,21 +190,29 @@ public class GameServlet extends HttpServlet {
                 + "\"selfName\":\"" + escapeJson(status.selfName) + "\"," 
                 + "\"opponentName\":\"" + escapeJson(status.opponentName) + "\"," 
                 + "\"selfHp\":" + status.selfHp + ","
-                + "\"selfMaxHp\":" + status.selfMaxHp + ","
-                + "\"selfStance\":" + status.selfStance + ","
-                + "\"selfMaxStance\":" + status.selfMaxStance + ","
                 + "\"opponentHp\":" + status.opponentHp + ","
+                + "\"selfMaxHp\":" + status.selfMaxHp + ","
                 + "\"opponentMaxHp\":" + status.opponentMaxHp + ","
+                + "\"selfStance\":" + status.selfStance + ","
                 + "\"opponentStance\":" + status.opponentStance + ","
+                + "\"selfMaxStance\":" + status.selfMaxStance + ","
                 + "\"opponentMaxStance\":" + status.opponentMaxStance + ","
+                + "\"selfState\":\"" + escapeJson(status.selfState) + "\","
+                + "\"opponentState\":\"" + escapeJson(status.opponentState) + "\","
+                + "\"selfStunned\":" + status.selfStunned + ","
+                + "\"opponentStunned\":" + status.opponentStunned + ","
+                + "\"selfStunReason\":\"" + escapeJson(status.selfStunReason) + "\","
+                + "\"opponentStunReason\":\"" + escapeJson(status.opponentStunReason) + "\","
+                + "\"selfRematchRequested\":" + status.selfRematchRequested + ","
+                + "\"opponentRematchRequested\":" + status.opponentRematchRequested + ","
+                + "\"opponentLeft\":" + status.opponentLeft + ","
+                + "\"selfAction\":\"" + escapeJson(status.selfAction) + "\","
+                + "\"opponentAction\":\"" + escapeJson(status.opponentAction) + "\","
                 + "\"roundCount\":" + status.roundCount + ","
-                + "\"guestPresent\":" + status.guestPresent + ","
                 + "\"gameOver\":" + status.gameOver + ","
                 + "\"canSubmit\":" + status.canSubmit + ","
                 + "\"selfSubmitted\":" + status.selfSubmitted + ","
                 + "\"opponentSubmitted\":" + status.opponentSubmitted + ","
-                + "\"selfImage\":\"" + escapeJson(status.selfImage) + "\"," 
-                + "\"opponentImage\":\"" + escapeJson(status.opponentImage) + "\"," 
                 + "\"lastMessage\":\"" + escapeJson(status.lastMessage) + "\"," 
                 + "\"roomStage\":\"" + escapeJson(status.roomStage) + "\"}"
                 ;

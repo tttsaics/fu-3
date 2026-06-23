@@ -15,7 +15,7 @@ public class ButtonManager {
     // 定義按鈕名稱
     private String[] btnNames = {
             "輕攻擊", "防禦", "格檔(輕)",
-            "中攻擊", "", "格檔(中)",
+            "中攻擊", "跳過", "格檔(中)",
             "強攻擊", "", "格檔(強)"
     };
 
@@ -89,8 +89,13 @@ public class ButtonManager {
 
     public void setButtonsEnabled(boolean enabled) {
         for (JButton btn : buttons) {
-            if (btn != null)
-                btn.setEnabled(enabled);
+            if (btn != null) {
+                if ("跳過".equals(btn.getText())) {
+                    btn.setEnabled(true);
+                } else {
+                    btn.setEnabled(enabled);
+                }
+            }
         }
     }
 
@@ -99,9 +104,9 @@ public class ButtonManager {
         int w = panel.getWidth();
         int h = panel.getHeight();
 
-        // 按鈕區塊佔下方 1/3
-        int startY = h * 2 / 3;
-        int areaH = h / 3;
+        // 按鈕區塊佔下方 1/4
+        int startY = h * 3 / 4;
+        int areaH = h / 4;
 
         // 按鈕大小與間距計算
         int margin = 10;

@@ -79,6 +79,7 @@ public class CombatManager {
                 enemy.stance = 0;
                 enemy.state = "guard_break";
                 enemy.isStunned = true; // 下回合暈眩
+                enemy.stunReason = "被破防";
                 enemy.takenMult = 1.5; // 下回合受傷加倍
             } else {
                 // 未破防：計算破綻
@@ -101,6 +102,7 @@ public class CombatManager {
                 player.stance = 0;
                 player.state = "guard_break";
                 player.isStunned = true;
+                player.stunReason = "被破防";
                 player.takenMult = 1.5;
             } else {
                 if (enemyAction == Action.H_ATK) {
@@ -138,6 +140,7 @@ public class CombatManager {
                 enemy.state = "parry";
                 player.state = "guard_break";
                 player.isStunned = true; // 玩家暈眩
+                player.stunReason = "被格檔";
                 enemy.dmgMult = 1.5; // 敵人下回合增傷
             } else {
                 // 格檔失敗 (猜錯) -> 視為受傷
@@ -159,21 +162,37 @@ public class CombatManager {
                 player.state = "parry";
                 enemy.state = "guard_break";
                 enemy.isStunned = true;
+                enemy.stunReason = "被格檔";
                 player.dmgMult = 1.5;
             } else {
                 playerHit = true;
                 player.takenMult = 1.5;
             }
         }
-        // 格檔揮空 (對方沒攻擊)
+        // 一方格檔，一方防禦 (格檔揮空)
+        else if (isParry(playerAction) && enemyAction == Action.GUARD) {
+            player.state = "parry"; // 揮空圖
+            enemy.state = "guard";
+            player.isStunned = true; // 懲罰
+            player.stunReason = "格檔揮空";
+        }
+        else if (isParry(enemyAction) && playerAction == Action.GUARD) {
+            enemy.state = "parry";
+            player.state = "guard";
+            enemy.isStunned = true;
+            enemy.stunReason = "格檔揮空";
+        }
+        // 其他格檔揮空狀況
         else {
             if (isParry(playerAction)) {
-                player.state = "parry"; // 或揮空圖
-                player.isStunned = true; // 懲罰
+                player.state = "parry";
+                player.isStunned = true;
+                player.stunReason = "格檔揮空";
             }
             if (isParry(enemyAction)) {
                 enemy.state = "parry";
                 enemy.isStunned = true;
+                enemy.stunReason = "格檔揮空";
             }
             // 雙方防禦或發呆
             if (playerAction == Action.GUARD)

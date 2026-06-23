@@ -250,13 +250,14 @@ public class GamePanel extends JPanel {
 
         Graphics2D g2d = (Graphics2D) g;
 
-        int barWidth = (int) (w * 0.47);// 血條長度
+        // 計算血條寬度，拉長至螢幕中間，中間留出方框空隙
+        int barWidth = w / 2 - 60; 
         int barHeight = 25; // 血條高度
         int stanceHeight = 10; // 架式條高度 (比較細)
 
-        int pX = (int) (0); // 玩家血條位置
-        int eX = (int) (w) - barWidth; // 敵人血條位置
-        int topY = 30; // 距離頂部
+        int pX = 20; // 玩家血條位置在左上
+        int eX = w / 2 + 40; // 敵人血條位置在右上
+        int topY = 20; // 距離頂部
 
         g2d.setStroke(new BasicStroke(3));
 
@@ -271,6 +272,7 @@ public class GamePanel extends JPanel {
         // 血條邊框
         g.setColor(Color.BLACK);
         g.drawRect(pX, topY, barWidth, barHeight);
+        
         // 架式條
         int stanceY = topY + barHeight + 5; // 往下移一點
         g.setColor(Color.BLACK); // 架式背景
@@ -281,32 +283,63 @@ public class GamePanel extends JPanel {
         g.setColor(Color.BLACK);
         g.drawRect(pX, stanceY, barWidth, stanceHeight);
 
-        // 畫敵人血條
+        // 畫敵人血條 (向右對齊並往外扣減，達成由內向外扣血效果)
         g.setColor(Color.BLACK);
         g.fillRect(eX, topY, barWidth, barHeight);
         // 畫目前血量 (紅色)
         g.setColor(new Color(220, 50, 50)); // 深紅色
         double eHpRatio = (double) enemy.hp / enemy.maxHp;// 當前血量與總血量比例
-        g.fillRect(eX, topY, (int) (barWidth * eHpRatio), barHeight);// 填充血量
+        int currentHpW = (int) (barWidth * eHpRatio);
+        g.fillRect(w - 20 - currentHpW, topY, currentHpW, barHeight);// 填充血量
         // 血條邊框
         g.setColor(Color.BLACK);
         g.drawRect(eX, topY, barWidth, barHeight);
-        // 架式條
+        
+        // 架式條 (向右對齊)
         g.setColor(Color.BLACK); // 架式背景
         g.fillRect(eX, stanceY, barWidth, stanceHeight);
         g.setColor(Color.GRAY); // 架式本體
         double eStanceRatio = (double) enemy.stance / enemy.maxStance;
-        g.fillRect(eX, stanceY, (int) (barWidth * eStanceRatio), stanceHeight);
+        int currentStanceW = (int) (barWidth * eStanceRatio);
+        g.fillRect(w - 20 - currentStanceW, stanceY, currentStanceW, stanceHeight);
         g.setColor(Color.BLACK);// 架式邊框
         g.drawRect(eX, stanceY, barWidth, stanceHeight);
 
-        g.setColor(Color.BLACK);
-        g.setFont(new Font("Arial", Font.BOLD, 50));
+        // 畫中央計時器方框
+        int timerX = w / 2 - 30;
+        int timerY = topY;
+        int timerW = 60;
+        int timerH = 60;
 
-        // 畫回合數
-        String roundStr = "" + roundCount;
+        g.setColor(Color.BLACK);
+        g.fillRect(timerX, timerY, timerW, timerH);
+        
+        g2d.setStroke(new BasicStroke(3));
+        g.setColor(Color.DARK_GRAY);
+        g.drawRect(timerX, timerY, timerW, timerH);
+
+        // 畫計時文字
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Impact", Font.BOLD, 30));
+        String timeStr;
+        if (currentState == GameState.INPUT) {
+            timeStr = String.valueOf(timeLeft);
+        } else if (currentState == GameState.GAME_OVER) {
+            timeStr = "GG";
+        } else {
+            timeStr = "VS";
+        }
+        FontMetrics fmTimer = g.getFontMetrics();
+        int strTimerW = fmTimer.stringWidth(timeStr);
+        int strTimerH = fmTimer.getAscent() - fmTimer.getDescent();
+        g.drawString(timeStr, timerX + (timerW - strTimerW) / 2, timerY + (timerH + strTimerH) / 2 - 2);
+
+        // 畫回合數 (移到計時器下方)
+        g.setColor(Color.BLACK);
+        g.setFont(new Font("Impact", Font.BOLD, 28));
+        String roundStr = "ROUND " + roundCount;
         int strW = g.getFontMetrics().stringWidth(roundStr);
-        g.drawString(roundStr, (w - strW) / 2, stanceY + 10);
+        g.drawString(roundStr, (w - strW) / 2, timerY + timerH + 30);
     }
 
     // 畫面繪製
@@ -321,11 +354,11 @@ public class GamePanel extends JPanel {
         g.setColor(Color.black);
         g.setFont(new Font("Microsoft JhengHei", Font.BOLD, 40));
 
-        // 動態排版
-        int displayH = currentH * 4/5;// 腳色高度占視窗4/5
+        // 動態排版：基於寬度計算角色大小，避免 16:10 等高螢幕比例下角色過度放大導致下半身被裁切
+        int displayH = (int) (currentW * 1.125);
 
         // 玩家跟敵人位置高度相同
-        int charY = (int) (currentH * 0.0001)-100;// 上往下
+        int charY = 0;// 下半身可以被邊界切到
 
         // 取的要畫的圖
         Image pImg = imgMgr.getImage(player.state);
@@ -344,7 +377,7 @@ public class GamePanel extends JPanel {
             // 計算需顯示的寬度
             int displayW = (int) (displayH * ratio);
             // 畫玩家
-            int playerX = -100; // 固定位置
+            int playerX = -20; // 靠近中間一點
             if (pImg != null) {
                 g.drawImage(pImg, playerX, charY, displayW, displayH, null);
             }
@@ -357,14 +390,14 @@ public class GamePanel extends JPanel {
             double ratio = (originalH > 0) ? (double) originalW / originalH : 1.0;
             // 計算需顯示的寬度
             int displayW = (int) (displayH * ratio);
-            int enemyX = (int) (currentW)+100 - displayW;
+            int enemyX = (int) (currentW)+20 - displayW; // 靠近中間一點
             g.drawImage(eImg, enemyX + displayW, charY, -displayW, displayH, null);
         }
 
         // 畫按鈕區
         // 計算區域範圍
-        int startY = currentH * 2 / 3;// 起始點
-        int areaH = currentH / 3;// 高度
+        int startY = currentH * 3 / 4;// 起始點
+        int areaH = currentH / 4;// 高度
 
         // 畫按鈕區
         g.setColor(new Color(255, 255, 255));

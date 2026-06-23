@@ -9,6 +9,7 @@ public class PlayerState {
     private final Character avatar;
     private final boolean computer;
     private Action action;
+    private boolean rematchRequested;
 
     public PlayerState(String name, String sessionId) {
         this(name, sessionId, false);
@@ -20,6 +21,7 @@ public class PlayerState {
         this.computer = computer;
         this.avatar = new Character(100, 15);
         this.action = null;
+        this.rematchRequested = false;
     }
 
     public boolean isComputer() {
@@ -52,5 +54,13 @@ public class PlayerState {
 
     public boolean hasSubmitted() {
         return action != null;
+    }
+
+    public boolean isRematchRequested() {
+        return rematchRequested;
+    }
+
+    public void setRematchRequested(boolean rematchRequested) {
+        this.rematchRequested = rematchRequested;
     }
 }
