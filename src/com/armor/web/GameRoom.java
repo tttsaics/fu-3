@@ -208,6 +208,10 @@ public class GameRoom {
         public final int opponentHp;
         public final int selfMaxHp;
         public final int opponentMaxHp;
+        public final int selfStance;
+        public final int selfMaxStance;
+        public final int opponentStance;
+        public final int opponentMaxStance;
         public final int roundCount;
         public final boolean guestPresent;
         public final boolean gameOver;
@@ -225,8 +229,12 @@ public class GameRoom {
             this.opponentName = opponent != null ? opponent.getName() : "等待對手加入";
             this.selfHp = self.getAvatar().hp;
             this.selfMaxHp = self.getAvatar().maxHp;
+            this.selfStance = self.getAvatar().stance;
+            this.selfMaxStance = self.getAvatar().maxStance;
             this.opponentHp = opponent != null ? opponent.getAvatar().hp : 0;
             this.opponentMaxHp = opponent != null ? opponent.getAvatar().maxHp : 0;
+            this.opponentStance = opponent != null ? opponent.getAvatar().stance : 0;
+            this.opponentMaxStance = opponent != null ? opponent.getAvatar().maxStance : 0;
             this.roundCount = room.roundCount;
             this.guestPresent = room.isGuestPresent();
             this.gameOver = room.gameOver;

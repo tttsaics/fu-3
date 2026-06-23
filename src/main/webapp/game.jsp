@@ -34,6 +34,10 @@
                         <div id="selfHpBar" class="hp-fill" style="width: 100%"></div>
                     </div>
                     <p>血量：<span id="selfHp">-</span>/<span id="selfMaxHp">-</span></p>
+                    <div class="stance-bar">
+                        <div id="selfStanceBar" class="stance-fill" style="width: 100%"></div>
+                    </div>
+                    <p>格擋：<span id="selfStance">-</span>/<span id="selfMaxStance">-</span></p>
                 </div>
 
                 <div class="vs-text">VS</div>
@@ -48,6 +52,10 @@
                         <div id="opponentHpBar" class="hp-fill" style="width: 100%"></div>
                     </div>
                     <p>血量：<span id="opponentHp">-</span>/<span id="opponentMaxHp">-</span></p>
+                    <div class="stance-bar">
+                        <div id="opponentStanceBar" class="stance-fill" style="width: 100%"></div>
+                    </div>
+                    <p>格擋：<span id="opponentStance">-</span>/<span id="opponentMaxStance">-</span></p>
                 </div>
             </div>
         </section>
@@ -139,6 +147,10 @@
         document.getElementById('selfMaxHp').textContent = data.selfMaxHp;
         document.getElementById('opponentHp').textContent = data.opponentHp;
         document.getElementById('opponentMaxHp').textContent = data.opponentMaxHp;
+        document.getElementById('selfStance').textContent = data.selfStance !== undefined ? data.selfStance : '-';
+        document.getElementById('selfMaxStance').textContent = data.selfMaxStance !== undefined ? data.selfMaxStance : '-';
+        document.getElementById('opponentStance').textContent = data.opponentStance !== undefined ? data.opponentStance : '-';
+        document.getElementById('opponentMaxStance').textContent = data.opponentMaxStance !== undefined ? data.opponentMaxStance : '-';
         document.getElementById('roundCount').textContent = data.roundCount;
         document.getElementById('lastMessage').textContent = data.lastMessage;
 
@@ -155,6 +167,15 @@
         const opponentHpPercent = (data.opponentHp / data.opponentMaxHp) * 100;
         document.getElementById('selfHpBar').style.width = Math.max(0, selfHpPercent) + '%';
         document.getElementById('opponentHpBar').style.width = Math.max(0, opponentHpPercent) + '%';
+
+        if (data.selfMaxStance) {
+            const selfStancePercent = (data.selfStance / data.selfMaxStance) * 100;
+            document.getElementById('selfStanceBar').style.width = Math.max(0, selfStancePercent) + '%';
+        }
+        if (data.opponentMaxStance) {
+            const opponentStancePercent = (data.opponentStance / data.opponentMaxStance) * 100;
+            document.getElementById('opponentStanceBar').style.width = Math.max(0, opponentStancePercent) + '%';
+        }
 
         if (data.roomStage === 'waiting') {
             document.getElementById('roomStatus').textContent = '等待對手加入...';
